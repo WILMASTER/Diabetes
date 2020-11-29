@@ -1,0 +1,376 @@
+---
+title: "Diabetes 130-US hospitals for years 1999-2008"
+author: "WILHEM CASTRO"
+date: "11/29/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Diabetes 130-US hospitals for years 1999-2008
+
+Los datos provienen del Centro de Investigación Clínica y Traslacional de la Virginia Commonwealth University. Reflejan Informacion de pacientes con diabetes en 130 hospitales de EE. UU. Durante un período de diez años desde 1999 hasta 2008. Hay más de 100.000 ingresos hospitalarios únicos en este conjunto de datos, de aproximadamente 70.000 pacientes únicos. Los datos incluyen elementos demográficos, como edad, sexo y raza, así como atributos clínicos como pruebas realizadas, visitas de emergencia 
+
+
+Objetivos
+- Identificar diferentes insights asociados a los típos de readmisión de los pacientes.
+
+
+- Propones un modelo de clasificación, que permita predecir el típo de readmisión de los pacientes.
+
+
+
+Metodología:
+
+
+Se realizó una etapa de preparación de datos. Posteriormente se exploraron los datos de manera univariada y multivariada. Acto seguido, se realiza elproceso de feature engineering y se construye el set de entrenamiento y validación. Finalmente, se propone el modelo XGBoost como estrategia de clasificación.
+
+## Carga de Datos
+
+```{r,include=FALSE}
+#Packages----
+
+library('tidyverse')
+library('psych')
+library("corrplot")
+library('caret')
+library('plyr')
+library('MASS')
+setwd('C:/Users/wilhem.castro/Documents/R/dataset_diabetes')
+getwd()
+```
+
+
+
+```{r}
+
+#Data Loading----
+
+ds<- read.csv('diabetic_data.csv')
+dim(ds)
+names(ds)
+#head(ds)
+dim(ds)
+
+```
+Se cuenta con 101766 registros y 50 variables
+
+## Datos Faltantes y manipulación de datos
+```{r}
+#Data Preparation---
+round(sapply(ds, function(x) sum(x=="?"))/101766*100,2) 
+ds<-ds[,c(-6,-11,-12)]
+#str(ds)
+dim(ds)
+
+```
+Como se puede observar existen campos con una alta proporción de datos faltantes, por lo que no se tendrán en cuenta en el análisis. 
+
+Estos campos son:
+
+- weight
+
+- payer
+
+- code
+
+- medical specialty
+
+
+Por otro lado,existen campos 13 campos numéricos y 37 categóricos:
+```{r}
+str(ds)
+
+```
+Teniendo en cuenta que algunos campos numéricos no aportan mucha información (por ejemplo el lugar codificado desde que los pacientes fueron dados de alta "discharge_disposition_id"), pero si lo pueden hacer como variables categóricas, se procede a redefinirlos como factores.
+
+```{r}
+#Cambiar algunos numéricos a factor
+ds$admission_source_id<- as.factor(ds$admission_source_id)
+levels(ds$admission_source_id)
+ds$admission_type_id<- as.factor(ds$admission_type_id)
+levels(ds$admission_type_id)
+ds$discharge_disposition_id<-as.factor(ds$discharge_disposition_id)
+levels(ds$discharge_disposition_id)
+
+```
+
+## Campos Numéricos
+
+A continuación,se procesan los campos numéricos (excluyendo los Ids) para identificar sus características y su posible grado de asociación entre sí y a su vez con la variable repuesta ("Readmittion"). Recordando que puede tomar los siguientes valores:
+
+```{r, include=FALSE}
+levels(ds$readmitted)
+#Numéricos
+num_cols <- unlist(lapply(ds, is.numeric))         # hay 13 númericas incliyendo Ids
+num<-ds[,num_cols]
+dim(num)
+num<-num[,c(-1,-2)]
+names(num)
+dim(num)
+
+```
+
+A continuación, se muestran los gráficos de densidad y boxplot para estas variables. Posteriormene se realiza una prueba Tukey para explorar la significancia de cada una de ella respecto del tipo de readmisión.
+
+## Tiempo de estadía en el Hospital
+```{r, echo=FALSE}
+
+ggplot(num, aes(x=time_in_hospital, fill=ds$readmitted)) + geom_density(alpha=.3)
+ggplot(num, aes(x=time_in_hospital, fill=ds$readmitted)) + geom_boxplot(alpha=.3)
+describeBy(num$time_in_hospital,ds$readmitted)
+TukeyHSD(aov(num$time_in_hospital~ds$readmitted),data=ds)
+
+```
+
+# Número de Exámenes de Laboratorio
+```{r, echo=FALSE}
+ggplot(num, aes(x=num_lab_procedures, fill=ds$readmitted)) + geom_density(alpha=.3)
+ggplot(num, aes(x=num_lab_procedures, fill=ds$readmitted)) + geom_boxplot(alpha=.3)
+describeBy(num$num_lab_procedures,ds$readmitted)
+TukeyHSD(aov(num$num_lab_procedures~ds$readmitted),data=ds)
+```
+
+
+# Número de Procedimientos
+```{r, echo=FALSE}
+ggplot(num, aes(x=num_procedures, fill=ds$readmitted)) + geom_density(alpha=.3)
+ggplot(num, aes(x=num_procedures, fill=ds$readmitted)) + geom_boxplot(alpha=.3)
+describeBy(num$num_procedures,ds$readmitted)
+TukeyHSD(aov(num$num_procedures~ds$readmitted),data=ds)
+
+```
+
+
+# Número de Medicamentos
+```{r, echo=FALSE}
+ggplot(num, aes(x=num_medications, fill=ds$readmitted)) + geom_density(alpha=.3)
+ggplot(num, aes(x=num_medications, fill=ds$readmitted)) + geom_boxplot(alpha=.3)
+describeBy(num$num_medications,ds$readmitted)
+TukeyHSD(aov(num$num_medications~ds$readmitted),data=ds)
+```
+
+
+# Número de Tratamientos Ambulatorios
+```{r, echo=FALSE}
+ggplot(num, aes(x=number_outpatient, fill=ds$readmitted)) + geom_density(alpha=.3)
+ggplot(num, aes(x=number_outpatient, fill=ds$readmitted)) + geom_boxplot(alpha=.3)
+describeBy(num$number_outpatient,ds$readmitted)
+TukeyHSD(aov(num$number_outpatient~ds$readmitted),data=ds)
+```
+
+
+# Número de Atenciones de Urgencia
+```{r, echo=FALSE}
+ggplot(num, aes(x=number_emergency, fill=ds$readmitted)) + geom_density(alpha=.3)
+ggplot(num, aes(x=number_emergency, fill=ds$readmitted)) + geom_boxplot(alpha=.3)
+describeBy(num$number_emergency,ds$readmitted)
+TukeyHSD(aov(num$number_emergency~ds$readmitted),data=ds)
+
+```
+
+
+# Número de Hospitalizaciones
+
+```{r, echo=FALSE}
+ggplot(num, aes(x=number_inpatient, fill=ds$readmitted)) + geom_density(alpha=.3)
+ggplot(num, aes(x=number_inpatient, fill=ds$readmitted)) + geom_boxplot(alpha=.3)
+describeBy(num$number_inpatient,ds$readmitted)
+TukeyHSD(aov(num$number_inpatient~ds$readmitted),data=ds)
+```
+
+# Número de Diagnósticos
+```{r, echo=FALSE}
+ggplot(num, aes(x=number_diagnoses, fill=ds$readmitted)) + geom_density(alpha=.3)
+ggplot(num, aes(x=number_diagnoses, fill=ds$readmitted)) + geom_boxplot(alpha=.3)
+describeBy(num$number_diagnoses,ds$readmitted)
+TukeyHSD(aov(num$number_diagnoses~ds$readmitted),data=ds)
+```
+
+
+Se puede observar que en general todas las variables numéricas que describen el uso que el paciente le ha dado al sistema (costos variables) parecen ser buenos estimadores para determinar las readmisiones.
+
+# Asociaciones entre Campos Numéricos
+```{r, echo=FALSE}
+DatosCor<- cor(num, use="pairwise", method="spearman")
+corrplot(DatosCor,method="number", type = "upper", order = "hclust", 
+         tl.col = "black", tl.srt = 45,diag=FALSE)
+
+```
+
+No hay asociaciones muy fuertes entre las variables, con excepción del tiempo de hospitalización y el número de medicamentos, asociación fácilmente comprensible. 
+
+Previo al procesamiento de las variables categóricas, se muestra gráficamente el comportamiento de todos los campos numéricos respecto de los tipos de readmisión y se realiza una estandarización de todos ellos.
+
+```{r, echo=FALSE}
+
+my_cols <- c("#00AFBB", "#E7B800", "#FC4E07")
+levels(ds$readmitted)
+pairs(num, pch = 19,  cex = 0.5,
+      col = my_cols[ds$readmitted],
+      lower.panel=NULL)
+
+```
+
+```{r, echo=FALSE}
+num_s<-scale(num,center=T,scale=T)
+describe(num_s)
+```
+
+## Variables Categóricas
+
+Ahora, se contruyen las 36 tablas cruzadas correspondiantes a las asociaciones entre todas las variables categóricas y la variable respuesta("readmittion"). También, se realizan pruebas chi-squared para estimar la significancia entre cada variable categórica y la variable respuesta("readmitted"). Lo anterior nos ayuda a tener una idea de qué variables aportarían o no en el proceso de clasificación.
+
+A continuación, se muestran las tablas sólo como ejemplo ilustrativo, pues algunos campos de estos tienen muchos niveles(36 tablas).
+
+```{r, echo=TRUE}
+#Categóricos----
+fact_cols <- unlist(lapply(ds, is.factor))         # Categoricos
+fact<-ds[,fact_cols]
+names(fact)
+dim(fact)
+prop.table(table(fact$readmitted))# Hay un pequeño desbalance para <30
+str(fact)
+names(fact)
+for (i in seq(1,26)){
+print(i)
+print((names(fact[i])))
+print(round(prop.table(table(fact$readmitted,fact[,i]),1)*100,1))
+print(chisq.test(fact$readmitted,fact[,i]))#Ho: Independence
+  }
+for (i in seq(29,36)){
+  print(i)
+  print((names(fact[i])))
+  print(round(prop.table(table(fact$readmitted,fact[,i]),1)*100,1))
+  print(chisq.test(fact$readmitted,fact[,i]))#Ho: Independence
+}
+
+```
+
+Del análisis anterior se logran identificar los índices  de los factores que parecen  no brindar información significatuva para estimar el típo de readmisión (14,15,17,19,20,24,25,26,27,28,30,31,32,33,34).
+
+## Variables Categóricas a Utilizar
+
+A continuación, se listan las 22 variables categóricas a utilizar. Por otro lado,teniendo en cuenta que el tipo de readmisión principal a estimar es el de readmisión en menos de 30 días desde la fecha de referencia, pues es el más grave, se decide reducir el número de niveles del campo readmisión de 3 a 2, unificando el tipo de admisión "mayor a 30 días" y "Sin readmisión"
+
+Se define 0 para la caracteristicas de interés "menor a 30 días"
+Se define 1 para el complemento.("mayor a 30 días")
+
+```{r, echo=TRUE}
+
+fact$readmitted<-ifelse(fact$readmitted=="<30",0,1)
+fact$readmitted<-as.factor(fact$readmitted)
+fact_r<-fact[,c(1:13,16,18,21,22,23,29,35,36,37)]
+#head(fact_r)
+names(fact_r)
+fact_r$readmitted<-as.factor(fact_r$readmitted)
+
+
+```
+
+Posteriormente se procede a ampliar el límite de memoria y la numerización n a n(Construcción de Dummies) de las variables categóricas.
+
+```{r, echo=TRUE}
+#One hot Encoding
+
+memory.limit(size = 19000)
+dmy <- dummyVars(" ~ .", data = fact_r[,-22])
+fact_d <- data.frame(predict(dmy, newdata = fact_r[,-22]))#Factores numerización n:n
+fact_d<-fact_d[,-fact_d$discharge_disposition_id.11] 
+readmitted<-fact_r$readmitted
+fact_dr<-cbind(fact_d,readmitted)
+#dim(fact_d)
+#dim(fact_dr)
+#Vista minable----
+vm<-cbind(num_s,fact_dr)# Vista Mináble con Factores con numericos standarizados
+#dim(vm)
+prop.table(table(fact$readmitted))# Hay un pequeño desbalance para <30
+```
+# Entrenamiento y Validación
+Se procede a construir los conjuntos de entrenamiento y validación. Teniendo en cuenta que existe un ligero desbalance entre los niveles de la variable objetivo, también se realiza undersampling.
+
+```{r, echo=TRUE}
+#creo entrenamiento y validacion
+unos<-subset(vm,vm$readmitted==1)#white
+cero<-subset(vm,vm$readmitted==0)#red
+sample <- sample.int(nrow(unos), round(.5*nrow(unos)))
+unos.train <- unos[sample, ]
+unos.test <- unos[-sample, ]
+#porcentaje que debo obtener para balancear entrenamiento
+value=nrow(unos.train)/nrow(unos)
+#value
+#sacar ese numero en entrenamiento, el resto en validacion
+sample <- sample.int(nrow(cero), round(value*nrow(cero)))
+cero.train <- cero[sample, ]
+cero.test <- cero[-sample, ]
+#dim(cero.train)
+#dim(cero.test)
+#creo entrenamiento y validacion
+data.train<-rbind(cero.train,unos.train)
+data.test<-rbind(cero.test,unos.test)
+```
+# XGBoost
+Se procede a ajustar el modelo de clasificación XGBoost
+
+```{r, echo=FALSE}
+library('xgboost')
+library('data.table')
+library('mlr')
+
+
+train<-data.train
+test<-data.test
+setDT(train) 
+setDT(test)
+
+#using one hot encoding 
+labels <- train$readmitted
+ts_label <- test$readmitted
+new_tr <- model.matrix(~.+0,data = train[,-c("readmitted"),with=F]) 
+new_ts <- model.matrix(~.+0,data = test[,-c("readmitted"),with=F])
+
+#convert factor to numeric 
+labels <- as.numeric(labels)-1
+ts_label <- as.numeric(ts_label)-1
+
+
+#preparing matrix 
+dtrain <- xgb.DMatrix(data = new_tr,label = labels) 
+dtest <- xgb.DMatrix(data = new_ts,label=ts_label)
+
+#default parameters
+params <- list(booster = "gbtree", objective = "binary:logistic", eta=0.3, gamma=0, max_depth=6, min_child_weight=1, subsample=1, colsample_bytree=1)
+
+
+xgbcv <- xgb.cv( params = params, data = dtrain, nrounds = 13, nfold = 5, showsd = T, stratified = T, print_every_n = 1, early_stop_round = 20, maximize = F)
+
+#first default - model training
+xgb1 <- xgb.train (params = params, data = dtrain, nrounds = 13, watchlist = list(val=dtest,train=dtrain), print_every_n = 1, early_stop_round = 10, maximize = F , eval_metric = "error")
+#model prediction
+xgbpred <- predict (xgb1,dtest)
+xgbpred <- ifelse (xgbpred > 0.5,1,0)
+
+#confusion matrix
+library(caret)
+xgbpred<-as.factor(xgbpred)
+ts_label<-as.factor(ts_label)
+confusionMatrix (xgbpred,ts_label)
+ctable <- as.table(matrix(c(66, 55, 5613, 45150), nrow = 2, byrow = TRUE))
+fourfoldplot(ctable, color = c("#F70A4A", "#14F48E"),
+             conf.level = 0, margin = 1, main = "Confusion Matrix")
+
+#view variable importance plot
+mat <- xgb.importance (feature_names = colnames(new_tr),model = xgb1)
+xgb.plot.importance (importance_matrix = mat[1:12])
+
+
+```
+
+- Se observa que todas las variables numéricas asociadas a la frecuencia de atención y uso del sistema son las más importantes de cara a predecir una readmisión al hospital. De igual forma, el lugar en el que el paciente fue dado de alta después del tratamiento, resulta ser valioso para la predicción.
+
+-Por otro lado, con mayor disponibilidad de tiempo para el análisis se sugeriría hacer tratamiento de outliers, reducción de dimensionalidad y data binning.
+
+-También se sugeriría correr otras modelos de clasificación más simples como una regresión logística o ensambles tipo bagging para comparar su desempeño.
+
